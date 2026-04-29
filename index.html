@@ -1,0 +1,295 @@
+<!-- Bigfoot Thinker — Simple (centered orb only) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Longy — Masters Program</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#F7F6F2;
+  color:#000;
+  font-family:'Montserrat',sans-serif;
+  height:100vh;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+}
+
+/* Orb — big, centered */
+#bigfootWidget{
+  width:min(840px, 85vw);
+  height:min(840px, 85vw);
+  border-radius:50%;
+  overflow:hidden;
+}
+
+/* Pause pill */
+.pause-pill{
+  display:none;
+  align-items:center;
+  gap:8px;
+  font-family:'Montserrat',sans-serif;
+  font-size:14px;
+  font-weight:600;
+  letter-spacing:0.3px;
+  color:#555;
+  background:#F7F6F2;
+  border:1px solid #e8e8e4;
+  padding:12px 32px;
+  border-radius:24px;
+  cursor:pointer;
+  margin-top:40px;
+  transition:background 0.2s,border-color 0.2s;
+  user-select:none;
+}
+.pause-pill:hover{background:#f0efeb;border-color:#ddd}
+.pill-icon{display:flex;gap:3px}
+.pill-bar{width:3px;height:14px;border-radius:1.5px;background:#E8A317;transition:background 0.2s}
+.pill-play{
+  width:0;height:0;
+  border-left:11px solid #E8A317;
+  border-top:7px solid transparent;
+  border-bottom:7px solid transparent;
+  display:none;
+  transition:border-color 0.2s;
+}
+.pause-pill.paused .pill-bar{display:none}
+.pause-pill.paused .pill-play{display:block}
+
+/* Mobile */
+@media(max-width:768px){
+  #bigfootWidget{
+    width:min(560px, 85vw);
+    height:min(560px, 85vw);
+  }
+  .pause-pill{
+    font-size:12px;
+    padding:10px 26px;
+    margin-top:32px;
+  }
+}
+/* Logo splash */
+#logoSplash{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  background:#F7F6F2;
+  z-index:9999;
+}
+#logoSplash img{
+  max-width:min(420px, 70vw);
+  height:auto;
+  opacity:0;
+  transform:scale(0.95);
+  transition:opacity 0.8s ease, transform 0.8s ease;
+}
+#logoSplash img.visible{
+  opacity:1;
+  transform:scale(1);
+}
+.splash-text{
+  font-family:'Montserrat',sans-serif;
+  text-align:center;
+  opacity:0;
+  transform:translateY(8px);
+  transition:opacity 0.6s ease, transform 0.6s ease;
+  position:absolute;
+}
+.splash-text.visible{
+  opacity:1;
+  transform:translateY(0);
+}
+.splash-text.fade-out{
+  opacity:0;
+  transform:translateY(-8px);
+}
+#splashSubtitle{
+  font-size:clamp(18px, 2.5vw, 24px);
+  font-weight:500;
+  color:#555;
+  line-height:1.5;
+  max-width:min(480px, 80vw);
+  letter-spacing:0.2px;
+}
+#splashStart{
+  font-size:clamp(16px, 2vw, 20px);
+  font-weight:600;
+  color:#8B1A4A;
+  letter-spacing:0.5px;
+  cursor:pointer;
+}
+#splashStart:hover{
+  color:#a82060;
+}
+</style>
+</head>
+<body>
+
+<!-- Logo splash screen -->
+<div id="logoSplash">
+  <img src="longy-logo.png" alt="Longy School of Music of Bard College" id="splashLogo">
+  <div class="splash-text" id="splashSubtitle">Evaluating the Impact of the<br>Online Master's of Music Education</div>
+  <div class="splash-text" id="splashStart">Hit start when you're ready</div>
+</div>
+
+<div id="bigfootWidget"></div>
+
+<div class="pause-pill" id="pausePill" onclick="togglePause()">
+  <div class="pill-icon">
+    <div class="pill-bar"></div>
+    <div class="pill-bar"></div>
+  </div>
+  <div class="pill-play"></div>
+  <span class="pill-text">Pause</span>
+</div>
+
+<script>
+var bfAgent = null;
+
+// Back-button interception
+history.pushState({bigfoot: true}, '');
+window.addEventListener('popstate', function(e){
+  if(bfAgent) history.pushState({bigfoot: true}, '');
+});
+
+// === WAKE LOCK ===
+var wakeLockSentinel = null;
+
+async function requestWakeLock(){
+  if(!('wakeLock' in navigator)) return;
+  try {
+    wakeLockSentinel = await navigator.wakeLock.request('screen');
+    wakeLockSentinel.addEventListener('release', function(){ console.log('[WakeLock] released'); });
+  } catch(e){ console.log('[WakeLock] failed:', e.message); }
+}
+
+function releaseWakeLock(){
+  if(wakeLockSentinel){ wakeLockSentinel.release(); wakeLockSentinel = null; }
+}
+
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible' && bfAgent) requestWakeLock();
+});
+
+// === NO-SLEEP AUDIO FALLBACK ===
+var noSleepAudio = null;
+
+function startNoSleepAudio(){
+  if('wakeLock' in navigator) return;
+  if(noSleepAudio) return;
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var oscillator = ctx.createOscillator();
+    var gain = ctx.createGain();
+    gain.gain.value = 0.001;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    noSleepAudio = { ctx: ctx, oscillator: oscillator };
+  } catch(e){}
+}
+
+function stopNoSleepAudio(){
+  if(noSleepAudio){ noSleepAudio.oscillator.stop(); noSleepAudio.ctx.close(); noSleepAudio = null; }
+}
+
+// === MOUNT ===
+function mountBigfoot(){
+  if(typeof BigfootEmbed !== 'undefined' && !bfAgent){
+    bfAgent = new BigfootEmbed({
+      campaign: 'longy-masters',
+      token: '0905ff4f-0717-4027-b701-2441e1dbccd4',
+      onSession: function(id){ console.log('Bigfoot session:', id); },
+      onStarted: function(){
+        var pill = document.getElementById('pausePill');
+        if(pill) pill.style.display = 'flex';
+        requestWakeLock();
+        startNoSleepAudio();
+      },
+      onPaused: function(){
+        var pill = document.getElementById('pausePill');
+        pill.classList.add('paused');
+        pill.querySelector('.pill-text').textContent = 'Unpause';
+        releaseWakeLock();
+      },
+      onResumed: function(){
+        var pill = document.getElementById('pausePill');
+        pill.classList.remove('paused');
+        pill.querySelector('.pill-text').textContent = 'Pause';
+        requestWakeLock();
+      },
+      onError: function(err){ console.error('Bigfoot error:', err); },
+    });
+    bfAgent.mount(document.getElementById('bigfootWidget'));
+  }
+}
+
+// === PAUSE/PLAY ===
+function togglePause(){
+  var pill = document.getElementById('pausePill');
+  if(pill.classList.contains('paused')){
+    bfAgent.play();
+  } else {
+    bfAgent.pause();
+  }
+}
+
+// === SPLASH + AUTO-START ===
+(function(){
+  var logo = document.getElementById('splashLogo');
+  var subtitle = document.getElementById('splashSubtitle');
+  var startMsg = document.getElementById('splashStart');
+  var splash = document.getElementById('logoSplash');
+
+  // Step 1: Logo fades in
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){
+    logo.classList.add('visible');
+  }); });
+
+  // Step 2: After 2s, logo fades out, subtitle fades in
+  setTimeout(function(){
+    logo.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    logo.style.opacity = '0';
+    logo.style.transform = 'scale(0.95)';
+    setTimeout(function(){
+      logo.style.display = 'none';
+      subtitle.classList.add('visible');
+    }, 600);
+  }, 2000);
+
+  // Step 3: After 2s more, subtitle fades out, "hit start" fades in
+  setTimeout(function(){
+    subtitle.classList.add('fade-out');
+    subtitle.classList.remove('visible');
+    setTimeout(function(){
+      subtitle.style.display = 'none';
+      startMsg.classList.add('visible');
+    }, 600);
+  }, 4600);
+
+  // Step 4: After 2s more, fade out splash and show orb
+  setTimeout(function(){
+    splash.style.transition = 'opacity 0.6s ease';
+    splash.style.opacity = '0';
+    setTimeout(function(){ splash.remove(); }, 600);
+  }, 7200);
+
+  function tryMount(){
+    if(typeof BigfootEmbed !== 'undefined') mountBigfoot();
+    else setTimeout(tryMount, 100);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tryMount);
+  else tryMount();
+})();
+</script>
+<script src="https://bigfoot-platform.onrender.com/embed/bigfoot-embed.js"></script>
+</body>
+</html>
